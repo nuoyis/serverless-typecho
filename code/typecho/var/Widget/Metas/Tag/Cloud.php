@@ -1,14 +1,14 @@
 <?php
-if (!defined('__TYPECHO_ROOT_DIR__')) exit;
-/**
- * 标签云
- *
- * @category typecho
- * @package Widget
- * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
- * @license GNU General Public License 2.0
- * @version $Id$
- */
+
+namespace Widget\Metas\Tag;
+
+use Typecho\Common;
+use Typecho\Db;
+use Widget\Base\Metas;
+
+if (!defined('__TYPECHO_ROOT_DIR__')) {
+    exit;
+}
 
 /**
  * 标签云组件
@@ -18,19 +18,18 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
  * @license GNU General Public License 2.0
  */
-class Widget_Metas_Tag_Cloud extends Widget_Abstract_Metas
+class Cloud extends Metas
 {
     /**
      * 入口函数
      *
-     * @access public
-     * @return void
+     * @throws Db\Exception
      */
     public function execute()
     {
-        $this->parameter->setDefault(array('sort' => 'count', 'ignoreZeroCount' => false, 'desc' => true, 'limit' => 0));
-        $select = $this->select()->where('type = ?', 'tag')->order($this->parameter->sort,
-        $this->parameter->desc ? Typecho_Db::SORT_DESC : Typecho_Db::SORT_ASC);
+        $this->parameter->setDefault(['sort' => 'count', 'ignoreZeroCount' => false, 'desc' => true, 'limit' => 0]);
+        $select = $this->select()->where('type = ?', 'tag')
+            ->order($this->parameter->sort, $this->parameter->desc ? Db::SORT_DESC : Db::SORT_ASC);
 
         /** 忽略零数量 */
         if ($this->parameter->ignoreZeroCount) {
@@ -42,20 +41,17 @@ class Widget_Metas_Tag_Cloud extends Widget_Abstract_Metas
             $select->limit($this->parameter->limit);
         }
 
-        $this->db->fetchAll($select, array($this, 'push'));
+        $this->db->fetchAll($select, [$this, 'push']);
     }
 
     /**
      * 按分割数输出字符串
      *
-     * @access public
-     * @param string $param 需要输出的值
-     * @return void
+     * @param mixed ...$args 需要输出的值
      */
-    public function split()
+    public function split(...$args)
     {
-        $args = func_get_args();
         array_unshift($args, $this->count);
-        echo call_user_func_array(array('Typecho_Common', 'splitByCount'), $args);
+        echo call_user_func_array([Common::class, 'splitByCount'], $args);
     }
 }

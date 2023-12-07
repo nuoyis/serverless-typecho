@@ -1,14 +1,14 @@
 <?php
-if (!defined('__TYPECHO_ROOT_DIR__')) exit;
-/**
- * 升级动作
- *
- * @category typecho
- * @package Widget
- * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
- * @license GNU General Public License 2.0
- * @version $Id$
- */
+
+namespace Widget;
+
+use Typecho\Common;
+use Typecho\Exception;
+use Widget\Base\Options as BaseOptions;
+
+if (!defined('__TYPECHO_ROOT_DIR__')) {
+    exit;
+}
 
 /**
  * 升级组件
@@ -17,103 +17,87 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * @category typecho
  * @package Widget
  */
-class Widget_Upgrade extends Widget_Abstract_Options implements Widget_Interface_Do
+class Upgrade extends BaseOptions implements ActionInterface
 {
-    /**
-     * 当前内部版本号
-     *
-     * @access private
-     * @var string
-     */
-    private $_currentVersion;
-
-    /**
-     * 对升级包按版本进行排序
-     *
-     * @access public
-     * @param string $a a版本
-     * @param string $b b版本
-     * @return integer
-     */
-    public function sortPackage($a, $b)
-    {
-        list ($ver, $rev) = explode('r', $a);
-        $a = str_replace('_', '.', $rev);
-
-        list ($ver, $rev) = explode('r', $b);
-        $b = str_replace('_', '.', $rev);
-
-        return version_compare($a, $b, '>') ? 1 : -1;
-    }
-
-    /**
-     * 过滤低版本的升级包
-     *
-     * @access public
-     * @param string $version 版本号
-     * @return boolean
-     */
-    public function filterPackage($version)
-    {
-        list ($ver, $rev) = explode('r', $version);
-        $rev = str_replace('_', '.', $rev);
-        return version_compare($rev, $this->_currentVersion, '>');
-    }
-
     /**
      * 执行升级程序
      *
-     * @access public
-     * @return void
+     * @throws \Typecho\Db\Exception
      */
     public function upgrade()
     {
-        list($prefix, $this->_currentVersion) = explode('/', $this->options->generator);
         $packages = get_class_methods('Upgrade');
-        $packages = array_filter($packages, array($this, 'filterPackage'));
-        usort($packages, array($this, 'sortPackage'));
 
-        $message = array();
+        preg_match("/^\w+ ([0-9\.]+)(\/[0-9\.]+)?$/i", $this->options->generator, $matches);
+        $currentVersion = $matches[1];
+        $currentMinor = '0';
+        if (isset($matches[2])) {
+            $currentMinor = substr($matches[2], 1);
+        }
+
+        $message = [];
 
         foreach ($packages as $package) {
-            $options = $this->widget('Widget_Options@' . $package);
+            preg_match("/^v([_0-9]+)(r[_0-9]+)?$/", $package, $matches);
+
+            $version = str_replace('_', '.', $matches[1]);
+
+            if (version_compare($currentVersion, $version, '>')) {
+                break;
+            }
+
+            if (isset($matches[2])) {
+                $minor = substr(str_replace('_', '.', $matches[2]), 1);
+
+                if (
+                    version_compare($currentVersion, $version, '=')
+                    && version_compare($currentMinor, $minor, '>=')
+                ) {
+                    break;
+                }
+
+                $version .= '/' . $minor;
+            }
+
+            $options = Options::allocWithAlias($package);
 
             /** 执行升级脚本 */
             try {
-                $result = call_user_func(array('Upgrade', $package), $this->db, $options);
+                $result = call_user_func([\Utils\Upgrade::class, $package], $this->db, $options);
                 if (!empty($result)) {
                     $message[] = $result;
                 }
-            } catch (Typecho_Exception $e) {
-                $this->widget('Widget_Notice')->set($e->getMessage(), 'error');
+            } catch (Exception $e) {
+                Notice::alloc()->set($e->getMessage(), 'error');
                 $this->response->goBack();
-                return;
             }
 
-            list ($ver, $rev) = explode('r', $package);
-            $ver = substr(str_replace('_', '.', $ver), 1);
-            $rev = str_replace('_', '.', $rev);
-
             /** 更新版本号 */
-            $this->update(array('value' => 'Typecho ' . $ver . '/' . $rev),
-            $this->db->sql()->where('name = ?', 'generator'));
+            $this->update(
+                ['value' => 'Typecho ' . $version],
+                $this->db->sql()->where('name = ?', 'generator')
+            );
 
-            $this->destory('Widget_Options@' . $package);
+            Options::destroy($package);
         }
 
         /** 更新版本号 */
-        $this->update(array('value' => 'Typecho ' . Typecho_Common::VERSION),
-        $this->db->sql()->where('name = ?', 'generator'));
+        $this->update(
+            ['value' => 'Typecho ' . Common::VERSION],
+            $this->db->sql()->where('name = ?', 'generator')
+        );
 
-        $this->widget('Widget_Notice')->set(empty($message) ? _t("升级已经完成") : $message,
-        empty($message) ? 'success' : 'notice');
+        Notice::alloc()->set(
+            empty($message) ? _t("升级已经完成") : $message,
+            empty($message) ? 'success' : 'notice'
+        );
     }
 
     /**
      * 初始化函数
      *
-     * @access public
-     * @return void
+     * @throws \Typecho\Db\Exception
+     * @throws \Typecho\Widget\Exception
      */
     public function action()
     {

@@ -1,12 +1,13 @@
 <?php if(!defined('__TYPECHO_ADMIN__')) exit; ?>
 <?php $content = !empty($post) ? $post : $page; if ($options->markdown): ?>
-<script src="<?php $options->adminStaticUrl('js', 'hyperdown.js?v=' . $suffixVersion); ?>"></script>
-<script src="<?php $options->adminStaticUrl('js', 'pagedown.js?v=' . $suffixVersion); ?>"></script>
-<script src="<?php $options->adminStaticUrl('js', 'pagedown-extra.js?v=' . $suffixVersion); ?>"></script>
-<script src="<?php $options->adminStaticUrl('js', 'diff.js?v=' . $suffixVersion); ?>"></script>
+<script src="<?php $options->adminStaticUrl('js', 'hyperdown.js'); ?>"></script>
+<script src="<?php $options->adminStaticUrl('js', 'pagedown.js'); ?>"></script>
+<script src="<?php $options->adminStaticUrl('js', 'paste.js'); ?>"></script>
+<script src="<?php $options->adminStaticUrl('js', 'purify.js'); ?>"></script>
 <script>
 $(document).ready(function () {
     var textarea = $('#text'),
+        isFullScreen = false,
         toolbar = $('<div class="editor" id="wmd-button-bar" />').insertBefore(textarea.parent()),
         preview = $('<div id="wmd-preview" class="wmd-hidetab" />').insertAfter('.editor');
 
@@ -59,29 +60,14 @@ $(document).ready(function () {
     };
 
     var converter = new HyperDown(),
-        editor = new Markdown.Editor(converter, '', options),
-        diffMatch = new diff_match_patch(), last = '', preview = $('#wmd-preview'),
-        mark = '@mark' + Math.ceil(Math.random() * 100000000) + '@',
-        span = '<span class="diff" />',
-        cache = {};
-
-    // 修正白名单
-    converter.enableHtml(true);
-    converter.commonWhiteList += '|img|cite|embed|iframe';
-    converter.specialWhiteList = $.extend(converter.specialWhiteList, {
-        'ol'            :  'ol|li',
-        'ul'            :  'ul|li',
-        'blockquote'    :  'blockquote',
-        'pre'           :  'pre|code'
-    });
-
-    converter.hook('beforeParseInline', function (html) {
-        return html.replace(/^\s*<!\-\-\s*more\s*\-\->\s*$/, function () {
-            return converter.makeHolder('<!--more-->');
-        });
-    });
+        editor = new Markdown.Editor(converter, '', options);
 
     // 自动跟随
+    converter.enableHtml(true);
+    converter.enableLine(true);
+    reloadScroll = scrollableEditor(textarea, preview);
+
+    // 修正白名单
     converter.hook('makeHtml', function (html) {
         html = html.replace('<p><!--more--></p>', '<!--more-->');
         
@@ -94,136 +80,38 @@ $(document).ready(function () {
                 + '<div class="details">' + details + '</div>';
         }
 
-
-        var diffs = diffMatch.diff_main(last, html);
-        last = html;
-
-        if (diffs.length > 0) {
-            var stack = [], markStr = mark;
-            
-            for (var i = 0; i < diffs.length; i ++) {
-                var diff = diffs[i], op = diff[0], str = diff[1]
-                    sp = str.lastIndexOf('<'), ep = str.lastIndexOf('>');
-
-                if (op != 0) {
-                    if (sp >=0 && sp > ep) {
-                        if (op > 0) {
-                            stack.push(str.substring(0, sp) + markStr + str.substring(sp));
-                        } else {
-                            var lastStr = stack[stack.length - 1], lastSp = lastStr.lastIndexOf('<');
-                            stack[stack.length - 1] = lastStr.substring(0, lastSp) + markStr + lastStr.substring(lastSp);
-                        }
-                    } else {
-                        if (op > 0) {
-                            stack.push(str + markStr);
-                        } else {
-                            stack.push(markStr);
-                        }
-                    }
-                    
-                    markStr = '';
-                } else {
-                    stack.push(str);
-                }
-            }
-
-            html = stack.join('');
-
-            if (!markStr) {
-                var pos = html.indexOf(mark), prev = html.substring(0, pos),
-                    next = html.substr(pos + mark.length),
-                    sp = prev.lastIndexOf('<'), ep = prev.lastIndexOf('>');
-
-                if (sp >= 0 && sp > ep) {
-                    html = prev.substring(0, sp) + span + prev.substring(sp) + next;
-                } else {
-                    html = prev + span + next;
-                }
-            }
-        }
-
-        // 替换img
-        html = html.replace(/<(img)\s+([^>]*)\s*src="([^"]+)"([^>]*)>/ig, function (all, tag, prefix, src, suffix) {
-            if (!cache[src]) {
-                cache[src] = false;
-            } else {
-                return '<span class="cache" data-width="' + cache[src][0] + '" data-height="' + cache[src][1] + '" '
-                    + 'style="background:url(' + src + ') no-repeat left top; width:'
-                    + cache[src][0] + 'px; height:' + cache[src][1] + 'px; display: inline-block; max-width: 100%;'
-                    + '-webkit-background-size: contain;-moz-background-size: contain;-o-background-size: contain;background-size: contain;" />';
-            }
-
-            return all;
-        });
-
         // 替换block
         html = html.replace(/<(iframe|embed)\s+([^>]*)>/ig, function (all, tag, src) {
             if (src[src.length - 1] == '/') {
                 src = src.substring(0, src.length - 1);
             }
 
-            return '<div style="background: #ddd; height: 40px; overflow: hidden; line-height: 40px; text-align: center; font-size: 12px; color: #777">'
-                + tag + ' : ' + $.trim(src) + '</div>';
+            return '<div class="embed"><strong>'
+                + tag + '</strong> : ' + $.trim(src) + '</div>';
         });
 
-        return html;
+        return DOMPurify.sanitize(html, {USE_PROFILES: {html: true}});
     });
 
-    function cacheResize() {
-        var t = $(this), w = parseInt(t.data('width')), h = parseInt(t.data('height')),
-            ow = t.width();
-
-        t.height(h * ow / w);
-    }
-
-    var to;
     editor.hooks.chain('onPreviewRefresh', function () {
-        var diff = $('.diff', preview), scrolled = false;
+        var images = $('img', preview), count = images.length;
 
-        if (to) {
-            clearTimeout(to);
-        }
+        if (count == 0) {
+            reloadScroll(true);
+        } else {
+            images.bind('load error', function () {
+                count --;
 
-        $('img', preview).load(function () {
-            var t = $(this), src = t.attr('src');
-
-            if (scrolled) {
-                preview.scrollTo(diff, {
-                    offset  :   - 50
-                });
-            }
-
-            if (!!src && !cache[src]) {
-                cache[src] = [this.width, this.height];
-            }
-        });
-
-        $('.cache', preview).resize(cacheResize).each(cacheResize);
-        
-        var changed = $('.diff', preview).parent();
-        if (!changed.is(preview)) {
-            changed.css('background-color', 'rgba(255,230,0,0.5)');
-            to = setTimeout(function () {
-                changed.css('background-color', 'transparent');
-            }, 4500);
-        }
-
-        if (diff.length > 0) {
-            var p = diff.position(), lh = diff.parent().css('line-height');
-            lh = !!lh ? parseInt(lh) : 0;
-
-            if (p.top < 0 || p.top > preview.height() - lh) {
-                preview.scrollTo(diff, {
-                    offset  :   - 50
-                });
-                scrolled = true;
-            }
+                if (count == 0) {
+                    reloadScroll(true);
+                }
+            });
         }
     });
 
-    <?php Typecho_Plugin::factory('admin/editor-js.php')->markdownEditor($content); ?>
+    <?php \Typecho\Plugin::factory('admin/editor-js.php')->markdownEditor($content); ?>
 
-    var input = $('#text'), th = textarea.height(), ph = preview.height(),
+    var th = textarea.height(), ph = preview.height(),
         uploadBtn = $('<button type="button" id="btn-fullscreen-upload" class="btn btn-link">'
             + '<i class="i-upload"><?php _e('附件'); ?></i></button>')
             .prependTo('.submit .right')
@@ -245,6 +133,7 @@ $(document).ready(function () {
         
         textarea.css('height', h);
         preview.css('height', h);
+        isFullScreen = true;
     });
 
     editor.hooks.chain('enterFullScreen', function () {
@@ -253,12 +142,18 @@ $(document).ready(function () {
         var h = window.screen.height - toolbar.outerHeight();
         textarea.css('height', h);
         preview.css('height', h);
+        isFullScreen = true;
     });
 
     editor.hooks.chain('exitFullScreen', function () {
         $(document.body).removeClass('fullscreen');
         textarea.height(th);
         preview.height(ph);
+        isFullScreen = false;
+    });
+
+    editor.hooks.chain('commandExecuted', function () {
+        textarea.trigger('input');
     });
 
     function initMarkdown() {
@@ -309,6 +204,17 @@ $(document).ready(function () {
             $("#wmd-preview").outerHeight($("#wmd-editarea").innerHeight());
 
             return false;
+        });
+
+        // 剪贴板复制图片
+        textarea.pastableTextarea().on('pasteImage', function (e, data) {
+            var name = data.name ? data.name.replace(/[\(\)\[\]\*#!]/g, '') : (new Date()).toISOString().replace(/\..+$/, '');
+            if (!name.match(/\.[a-z0-9]{2,}$/i)) {
+                var ext = data.blob.type.split('/').pop();
+                name += '.' + ext;
+            }
+
+            Typecho.uploadFile(new File([data.blob], name), name);
         });
     }
 

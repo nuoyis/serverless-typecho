@@ -1,14 +1,19 @@
 <?php
-if (!defined('__TYPECHO_ROOT_DIR__')) exit;
-/**
- * 插件管理
- *
- * @category typecho
- * @package Widget
- * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
- * @license GNU General Public License 2.0
- * @version $Id$
- */
+
+namespace Widget\Plugins;
+
+use Typecho\Common;
+use Typecho\Db;
+use Typecho\Plugin;
+use Typecho\Widget\Exception;
+use Typecho\Widget\Helper\Form;
+use Widget\ActionInterface;
+use Widget\Base\Options;
+use Widget\Notice;
+
+if (!defined('__TYPECHO_ROOT_DIR__')) {
+    exit;
+}
 
 /**
  * 插件管理组件
@@ -19,101 +24,61 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
  * @license GNU General Public License 2.0
  */
-class Widget_Plugins_Edit extends Widget_Abstract_Options implements Widget_Interface_Do
+class Edit extends Options implements ActionInterface
 {
     /**
      * @var bool
      */
-    private $_configNoticed = false;
-
-    /**
-     * 手动配置插件变量
-     *
-     * @param       $pluginName 插件名称
-     * @param array $settings 变量键值对
-     * @param bool  $isPersonal 是否为私人变量
-     */
-    public static function configPlugin($pluginName, array $settings, $isPersonal = false)
-    {
-        $db = Typecho_Db::get();
-        $pluginName = ($isPersonal ? '_' : '') . 'plugin:' . $pluginName;
-        
-        $select = $db->select()->from('table.options')
-            ->where('name = ?', $pluginName);
-            
-        $options = $db->fetchAll($select);
-        
-        if (empty($settings)) {
-            if (!empty($options)) {
-                $db->query($db->delete('table.options')->where('name = ?', $pluginName));
-            }
-        } else {
-            if (empty($options)) {
-                $db->query($db->insert('table.options')
-                ->rows(array(
-                    'name'  =>  $pluginName,
-                    'value' =>  serialize($settings),
-                    'user'  =>  0
-                )));
-            } else {
-                foreach ($options as $option) {
-                    $value = unserialize($option['value']);
-                    $value = array_merge($value, $settings);
-                    
-                    $db->query($db->update('table.options')
-                    ->rows(array('value' => serialize($value)))
-                    ->where('name = ?', $pluginName)
-                    ->where('user = ?', $option['user']));
-                }
-            }
-        }
-    }
+    private $configNoticed = false;
 
     /**
      * 启用插件
      *
      * @param $pluginName
-     * @throws Typecho_Widget_Exception
+     * @throws Exception|Db\Exception|Plugin\Exception
      */
     public function activate($pluginName)
     {
         /** 获取插件入口 */
-        list($pluginFileName, $className) = Typecho_Plugin::portal($pluginName, $this->options->pluginDir($pluginName));
-        $info = Typecho_Plugin::parseInfo($pluginFileName);
+        [$pluginFileName, $className] = Plugin::portal($pluginName, $this->options->pluginDir);
+        $info = Plugin::parseInfo($pluginFileName);
 
         /** 检测依赖信息 */
-        list ($version, $build) = explode('/', Typecho_Common::VERSION);
-        if (Typecho_Plugin::checkDependence($build, $info['dependence'])) {
+        if (Plugin::checkDependence($info['since'])) {
 
             /** 获取已启用插件 */
-            $plugins = Typecho_Plugin::export();
+            $plugins = Plugin::export();
             $activatedPlugins = $plugins['activated'];
 
             /** 载入插件 */
             require_once $pluginFileName;
 
             /** 判断实例化是否成功 */
-            if (isset($activatedPlugins[$pluginName]) || !class_exists($className)
-            || !method_exists($className, 'activate')) {
-                throw new Typecho_Widget_Exception(_t('无法启用插件'), 500);
+            if (
+                isset($activatedPlugins[$pluginName]) || !class_exists($className)
+                || !method_exists($className, 'activate')
+            ) {
+                throw new Exception(_t('无法启用插件'), 500);
             }
 
             try {
-                $result = call_user_func(array($className, 'activate'));
-                Typecho_Plugin::activate($pluginName);
-                $this->update(array('value' => serialize(Typecho_Plugin::export())),
-                $this->db->sql()->where('name = ?', 'plugins'));
-            } catch (Typecho_Plugin_Exception $e) {
+                $result = call_user_func([$className, 'activate']);
+                Plugin::activate($pluginName);
+                $this->update(
+                    ['value' => serialize(Plugin::export())],
+                    $this->db->sql()->where('name = ?', 'plugins')
+                );
+            } catch (Plugin\Exception $e) {
                 /** 截获异常 */
-                $this->widget('Widget_Notice')->set($e->getMessage(), 'error');
+                Notice::alloc()->set($e->getMessage(), 'error');
                 $this->response->goBack();
             }
 
-            $form = new Typecho_Widget_Helper_Form();
-            call_user_func(array($className, 'config'), $form);
+            $form = new Form();
+            call_user_func([$className, 'config'], $form);
 
-            $personalForm = new Typecho_Widget_Helper_Form();
-            call_user_func(array($className, 'personalConfig'), $personalForm);
+            $personalForm = new Form();
+            call_user_func([$className, 'personalConfig'], $personalForm);
 
             $options = $form->getValues();
             $personalOptions = $personalForm->getValues();
@@ -125,43 +90,133 @@ class Widget_Plugins_Edit extends Widget_Abstract_Options implements Widget_Inte
             if ($personalOptions && !$this->personalConfigHandle($className, $personalOptions)) {
                 self::configPlugin($pluginName, $personalOptions, true);
             }
-
         } else {
-
-            $result = _t('<a href="%s">%s</a> 无法在此版本的typecho下正常工作', $info['link'], $info['title']);
-
+            $result = _t('<a href="%s">%s</a> 无法在此版本的typecho下正常工作', $info['homepage'], $info['title']);
         }
 
         /** 设置高亮 */
-        $this->widget('Widget_Notice')->highlight('plugin-' . $pluginName);
+        Notice::alloc()->highlight('plugin-' . $pluginName);
 
         if (isset($result) && is_string($result)) {
-            $this->widget('Widget_Notice')->set($result, 'notice');
+            Notice::alloc()->set($result, 'notice');
         } else {
-            $this->widget('Widget_Notice')->set(_t('插件已经被启用'), 'success');
+            Notice::alloc()->set(_t('插件已经被启用'), 'success');
         }
         $this->response->goBack();
     }
 
     /**
+     * 用自有函数处理配置信息
+     *
+     * @access public
+     * @param string $pluginName 插件名称
+     * @param array $settings 配置值
+     * @param boolean $isInit 是否为初始化
+     * @return boolean
+     * @throws Plugin\Exception
+     */
+    public function configHandle(string $pluginName, array $settings, bool $isInit): bool
+    {
+        /** 获取插件入口 */
+        [$pluginFileName, $className] = Plugin::portal($pluginName, $this->options->pluginDir);
+
+        if (!$isInit && method_exists($className, 'configCheck')) {
+            $result = call_user_func([$className, 'configCheck'], $settings);
+
+            if (!empty($result) && is_string($result)) {
+                Notice::alloc()->set($result, 'notice');
+                $this->configNoticed = true;
+            }
+        }
+
+        if (method_exists($className, 'configHandle')) {
+            call_user_func([$className, 'configHandle'], $settings, $isInit);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 手动配置插件变量
+     *
+     * @param string $pluginName 插件名称
+     * @param array $settings 变量键值对
+     * @param bool $isPersonal 是否为私人变量
+     * @throws Db\Exception
+     */
+    public static function configPlugin(string $pluginName, array $settings, bool $isPersonal = false)
+    {
+        $db = Db::get();
+        $pluginName = ($isPersonal ? '_' : '') . 'plugin:' . $pluginName;
+
+        $select = $db->select()->from('table.options')
+            ->where('name = ?', $pluginName);
+
+        $options = $db->fetchAll($select);
+
+        if (empty($settings)) {
+            if (!empty($options)) {
+                $db->query($db->delete('table.options')->where('name = ?', $pluginName));
+            }
+        } else {
+            if (empty($options)) {
+                $db->query($db->insert('table.options')
+                    ->rows([
+                        'name'  => $pluginName,
+                        'value' => serialize($settings),
+                        'user'  => 0
+                    ]));
+            } else {
+                foreach ($options as $option) {
+                    $value = unserialize($option['value']);
+                    $value = array_merge($value, $settings);
+
+                    $db->query($db->update('table.options')
+                        ->rows(['value' => serialize($value)])
+                        ->where('name = ?', $pluginName)
+                        ->where('user = ?', $option['user']));
+                }
+            }
+        }
+    }
+
+    /**
+     * 用自有函数处理自定义配置信息
+     *
+     * @param string $className 类名
+     * @param array $settings 配置值
+     * @return boolean
+     */
+    public function personalConfigHandle(string $className, array $settings): bool
+    {
+        if (method_exists($className, 'personalConfigHandle')) {
+            call_user_func([$className, 'personalConfigHandle'], $settings, true);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * 禁用插件
      *
-     * @param $pluginName
-     * @throws Typecho_Widget_Exception
+     * @param string $pluginName
+     * @throws Db\Exception
      * @throws Exception
-     * @throws Typecho_Plugin_Exception
+     * @throws Plugin\Exception
      */
-    public function deactivate($pluginName)
+    public function deactivate(string $pluginName)
     {
         /** 获取已启用插件 */
-        $plugins = Typecho_Plugin::export();
+        $plugins = Plugin::export();
         $activatedPlugins = $plugins['activated'];
         $pluginFileExist = true;
 
         try {
             /** 获取插件入口 */
-            list($pluginFileName, $className) = Typecho_Plugin::portal($pluginName, $this->options->pluginDir($pluginName));
-        } catch (Typecho_Plugin_Exception $e) {
+            [$pluginFileName, $className] = Plugin::portal($pluginName, $this->options->pluginDir);
+        } catch (Plugin\Exception $e) {
             $pluginFileExist = false;
 
             if (!isset($activatedPlugins[$pluginName])) {
@@ -171,7 +226,7 @@ class Widget_Plugins_Edit extends Widget_Abstract_Options implements Widget_Inte
 
         /** 判断实例化是否成功 */
         if (!isset($activatedPlugins[$pluginName])) {
-            throw new Typecho_Widget_Exception(_t('无法禁用插件'), 500);
+            throw new Exception(_t('无法禁用插件'), 500);
         }
 
         if ($pluginFileExist) {
@@ -180,34 +235,35 @@ class Widget_Plugins_Edit extends Widget_Abstract_Options implements Widget_Inte
             require_once $pluginFileName;
 
             /** 判断实例化是否成功 */
-            if (!isset($activatedPlugins[$pluginName]) || !class_exists($className)
-            || !method_exists($className, 'deactivate')) {
-                throw new Typecho_Widget_Exception(_t('无法禁用插件'), 500);
+            if (
+                !isset($activatedPlugins[$pluginName]) || !class_exists($className)
+                || !method_exists($className, 'deactivate')
+            ) {
+                throw new Exception(_t('无法禁用插件'), 500);
             }
 
             try {
-                $result = call_user_func(array($className, 'deactivate'));
-            } catch (Typecho_Plugin_Exception $e) {
+                $result = call_user_func([$className, 'deactivate']);
+            } catch (Plugin\Exception $e) {
                 /** 截获异常 */
-                $this->widget('Widget_Notice')->set($e->getMessage(), 'error');
+                Notice::alloc()->set($e->getMessage(), 'error');
                 $this->response->goBack();
             }
 
             /** 设置高亮 */
-            $this->widget('Widget_Notice')->highlight('plugin-' . $pluginName);
+            Notice::alloc()->highlight('plugin-' . $pluginName);
         }
 
-        Typecho_Plugin::deactivate($pluginName);
-        $this->update(array('value' => serialize(Typecho_Plugin::export())),
-        $this->db->sql()->where('name = ?', 'plugins'));
+        Plugin::deactivate($pluginName);
+        $this->update(['value' => serialize(Plugin::export())], $this->db->sql()->where('name = ?', 'plugins'));
 
         $this->delete($this->db->sql()->where('name = ?', 'plugin:' . $pluginName));
         $this->delete($this->db->sql()->where('name = ?', '_plugin:' . $pluginName));
 
         if (isset($result) && is_string($result)) {
-            $this->widget('Widget_Notice')->set($result, 'notice');
+            Notice::alloc()->set($result, 'notice');
         } else {
-            $this->widget('Widget_Notice')->set(_t('插件已经被禁用'), 'success');
+            Notice::alloc()->set(_t('插件已经被禁用'), 'success');
         }
         $this->response->goBack();
     }
@@ -215,13 +271,14 @@ class Widget_Plugins_Edit extends Widget_Abstract_Options implements Widget_Inte
     /**
      * 配置插件
      *
-     * @param $pluginName
-     * @access public
-     * @return void
+     * @param string $pluginName
+     * @throws Db\Exception
+     * @throws Exception
+     * @throws Plugin\Exception
      */
-    public function config($pluginName)
+    public function config(string $pluginName)
     {
-        $form = $this->widget('Widget_Plugins_Config')->config();
+        $form = Config::alloc()->config();
 
         /** 验证表单 */
         if ($form->validate()) {
@@ -235,71 +292,19 @@ class Widget_Plugins_Edit extends Widget_Abstract_Options implements Widget_Inte
         }
 
         /** 设置高亮 */
-        $this->widget('Widget_Notice')->highlight('plugin-' . $pluginName);
+        Notice::alloc()->highlight('plugin-' . $pluginName);
 
-        if (!$this->_configNoticed) {
+        if (!$this->configNoticed) {
             /** 提示信息 */
-            $this->widget('Widget_Notice')->set(_t("插件设置已经保存"), 'success');
+            Notice::alloc()->set(_t("插件设置已经保存"), 'success');
         }
 
         /** 转向原页 */
-        $this->response->redirect(Typecho_Common::url('plugins.php', $this->options->adminUrl));
-    }
-
-    /**
-     * 用自有函数处理配置信息
-     *
-     * @access public
-     * @param string $pluginName 插件名称
-     * @param array $settings 配置值
-     * @param boolean $isInit 是否为初始化
-     * @return boolean
-     */
-    public function configHandle($pluginName, array $settings, $isInit)
-    {
-        /** 获取插件入口 */
-        list($pluginFileName, $className) = Typecho_Plugin::portal($pluginName, $this->options->pluginDir($pluginName));
-
-        if (!$isInit && method_exists($className, 'configCheck')) {
-            $result = call_user_func(array($className, 'configCheck'), $settings);
-
-            if (!empty($result) && is_string($result)) {
-                $this->widget('Widget_Notice')->set($result, 'notice');
-                $this->_configNoticed = true;
-            }
-        }
-
-        if (method_exists($className, 'configHandle')) {
-            call_user_func(array($className, 'configHandle'), $settings, $isInit);
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * 用自有函数处理自定义配置信息
-     *
-     * @access public
-     * @param string $className 类名
-     * @param array $settings 配置值
-     * @return boolean
-     */
-    public function personalConfigHandle($className, array $settings)
-    {
-        if (method_exists($className, 'personalConfigHandle')) {
-            call_user_func(array($className, 'personalConfigHandle'), $settings, true);
-            return true;
-        }
-
-        return false;
+        $this->response->redirect(Common::url('plugins.php', $this->options->adminUrl));
     }
 
     /**
      * 绑定动作
-     *
-     * @access public
-     * @return void
      */
     public function action()
     {

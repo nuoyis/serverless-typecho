@@ -4,10 +4,10 @@ include 'common.php';
 if ($user->hasLogin() || !$options->allowRegister) {
     $response->redirect($options->siteUrl);
 }
-$rememberName = htmlspecialchars(Typecho_Cookie::get('__typecho_remember_name'));
-$rememberMail = htmlspecialchars(Typecho_Cookie::get('__typecho_remember_mail'));
-Typecho_Cookie::delete('__typecho_remember_name');
-Typecho_Cookie::delete('__typecho_remember_mail');
+$rememberName = htmlspecialchars(\Typecho\Cookie::get('__typecho_remember_name'));
+$rememberMail = htmlspecialchars(\Typecho\Cookie::get('__typecho_remember_mail'));
+\Typecho\Cookie::delete('__typecho_remember_name');
+\Typecho\Cookie::delete('__typecho_remember_mail');
 
 $bodyClass = 'body-100';
 
@@ -15,7 +15,7 @@ include 'header.php';
 ?>
 <div class="typecho-login-wrap">
     <div class="typecho-login">
-        <h1><a href="http://typecho.org" class="i-logo">Typecho</a></h1>
+        <h1><a href="https://typecho.org" class="i-logo">Typecho</a></h1>
         <form action="<?php $options->registerAction(); ?>" method="post" name="register" role="form">
             <p>
                 <label for="name" class="sr-only"><?php _e('用户名'); ?></label>

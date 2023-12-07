@@ -1,14 +1,14 @@
 <?php
-if (!defined('__TYPECHO_ROOT_DIR__')) exit;
-/**
- * 回响归档
- *
- * @category typecho
- * @package Widget
- * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
- * @license GNU General Public License 2.0
- * @version $Id$
- */
+
+namespace Widget\Comments;
+
+use Typecho\Config;
+use Typecho\Db\Exception;
+use Widget\Base\Comments;
+
+if (!defined('__TYPECHO_ROOT_DIR__')) {
+    exit;
+}
 
 /**
  * 回响归档组件
@@ -18,145 +18,131 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
  * @license GNU General Public License 2.0
  */
-class Widget_Comments_Ping extends Widget_Abstract_Comments
+class Ping extends Comments
 {
     /**
-     * _customSinglePingCallback 
-     * 
+     * _customSinglePingCallback
+     *
      * @var boolean
      * @access private
      */
-    private $_customSinglePingCallback = false;
-    
+    private $customSinglePingCallback = false;
+
     /**
-     * 构造函数,初始化组件
-     *
-     * @access public
-     * @param mixed $request request对象
-     * @param mixed $response response对象
-     * @param mixed $params 参数列表
-     * @return void
+     * @param Config $parameter
      */
-    public function __construct($request, $response, $params = NULL)
+    protected function initParameter(Config $parameter)
     {
-        parent::__construct($request, $response, $params);
-        $this->parameter->setDefault('parentId=0');
-        
+        $parameter->setDefault('parentId=0');
+
         /** 初始化回调函数 */
         if (function_exists('singlePing')) {
-            $this->_customSinglePingCallback = true;
+            $this->customSinglePingCallback = true;
         }
     }
 
-    /**
-     * 重载内容获取
-     *
-     * @access protected
-     * @return void
-     */
-    protected function ___parentContent()
-    {
-        return $this->parameter->parentContent;
-    }
-    
-    /**
-     * 回响回调函数
-     * 
-     * @access private
-     * @param string $singlePingOptions 单个回响自定义选项
-     * @return void
-     */
-    private function singlePingCallback($singlePingOptions)
-    {
-        if ($this->_customSinglePingCallback) {
-            return singlePing($this, $singlePingOptions);
-        }
-
-?>
-<li id="<?php $this->theId(); ?>" class="ping-body">
-    <div class="ping-title">
-        <cite class="fn"><?php
-        $singlePingOptions->beforeTitle();
-        $this->author(true);
-        $singlePingOptions->afterTitle();
-        ?></cite>
-    </div>
-    <div class="ping-meta">
-        <a href="<?php $this->permalink(); ?>"><?php $singlePingOptions->beforeDate();
-        $this->date($singlePingOptions->dateFormat);
-        $singlePingOptions->afterDate(); ?></a>
-    </div>
-    <?php $this->content(); ?>
-</li>
-<?php
-    }
-    
     /**
      * 输出文章回响数
      *
-     * @access public
-     * @param string $string 评论数格式化数据
-     * @return void
+     * @param mixed ...$args 评论数格式化数据
      */
-    public function num()
+    public function num(...$args)
     {
-        $args = func_get_args();
-        if (!$args) {
+        if (empty($args)) {
             $args[] = '%d';
         }
 
-        echo sprintf(isset($args[$this->length]) ? $args[$this->length] : array_pop($this->length), $this->length);
+        echo sprintf($args[$this->length] ?? array_pop($args), $this->length);
     }
 
     /**
-     * execute  
-     * 
+     * execute
+     *
      * @access public
      * @return void
+     * @throws Exception
      */
     public function execute()
     {
         if (!$this->parameter->parentId) {
             return;
         }
-        
-        $select = $this->select()->where('table.comments.status = ?', 'approved')
-        ->where('table.comments.cid = ?', $this->parameter->parentId)
-        ->where('table.comments.type <> ?', 'comment')
-        ->order('table.comments.coid', 'ASC');
 
-        $this->db->fetchAll($select, array($this, 'push'));
+        $select = $this->select()->where('table.comments.status = ?', 'approved')
+            ->where('table.comments.cid = ?', $this->parameter->parentId)
+            ->where('table.comments.type <> ?', 'comment')
+            ->order('table.comments.coid', 'ASC');
+
+        $this->db->fetchAll($select, [$this, 'push']);
     }
-    
+
     /**
      * 列出回响
-     * 
-     * @access private
+     *
      * @param mixed $singlePingOptions 单个回响自定义选项
-     * @return void
      */
-    public function listPings($singlePingOptions = NULL)
+    public function listPings($singlePingOptions = null)
     {
         if ($this->have()) {
             //初始化一些变量
-            $parsedSinglePingOptions = Typecho_Config::factory($singlePingOptions);
-            $parsedSinglePingOptions->setDefault(array(
-                'before'        =>  '<ol class="ping-list">',
-                'after'         =>  '</ol>',
-                'beforeTitle'   =>  '',
-                'afterTitle'    =>  '',
-                'beforeDate'    =>  '',
-                'afterDate'     =>  '',
-                'dateFormat'    =>  $this->options->commentDateFormat
-            ));
-        
+            $parsedSinglePingOptions = Config::factory($singlePingOptions);
+            $parsedSinglePingOptions->setDefault([
+                'before'      => '<ol class="ping-list">',
+                'after'       => '</ol>',
+                'beforeTitle' => '',
+                'afterTitle'  => '',
+                'beforeDate'  => '',
+                'afterDate'   => '',
+                'dateFormat'  => $this->options->commentDateFormat
+            ]);
+
             echo $parsedSinglePingOptions->before;
-            
+
             while ($this->next()) {
                 $this->singlePingCallback($parsedSinglePingOptions);
             }
-            
+
             echo $parsedSinglePingOptions->after;
         }
+    }
+
+    /**
+     * 回响回调函数
+     *
+     * @param string $singlePingOptions 单个回响自定义选项
+     */
+    private function singlePingCallback(string $singlePingOptions)
+    {
+        if ($this->customSinglePingCallback) {
+            return singlePing($this, $singlePingOptions);
+        }
+
+        ?>
+        <li id="<?php $this->theId(); ?>" class="ping-body">
+            <div class="ping-title">
+                <cite class="fn"><?php
+                    $singlePingOptions->beforeTitle();
+                    $this->author(true);
+                    $singlePingOptions->afterTitle();
+                ?></cite>
+            </div>
+            <div class="ping-meta">
+                <a href="<?php $this->permalink(); ?>"><?php $singlePingOptions->beforeDate();
+                    $this->date($singlePingOptions->dateFormat);
+                    $singlePingOptions->afterDate(); ?></a>
+            </div>
+            <?php $this->content(); ?>
+        </li>
+        <?php
+    }
+
+    /**
+     * 重载内容获取
+     *
+     * @return array|null
+     */
+    protected function ___parentContent(): ?array
+    {
+        return $this->parameter->parentContent;
     }
 }

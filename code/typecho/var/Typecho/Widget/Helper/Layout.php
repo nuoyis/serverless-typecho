@@ -1,13 +1,6 @@
 <?php
-/**
- * HTML布局帮手
- *
- * @category typecho
- * @package Widget
- * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
- * @license GNU General Public License 2.0
- * @version $Id$
- */
+
+namespace Typecho\Widget\Helper;
 
 /**
  * HTML布局帮手类
@@ -17,7 +10,7 @@
  * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
  * @license GNU General Public License 2.0
  */
-class Typecho_Widget_Helper_Layout
+class Layout
 {
     /**
      * 元素列表
@@ -25,7 +18,7 @@ class Typecho_Widget_Helper_Layout
      * @access private
      * @var array
      */
-    private $_items = array();
+    private $items = [];
 
     /**
      * 表单属性列表
@@ -33,7 +26,7 @@ class Typecho_Widget_Helper_Layout
      * @access private
      * @var array
      */
-    private $_attributes = array();
+    private $attributes = [];
 
     /**
      * 标签名称
@@ -41,7 +34,7 @@ class Typecho_Widget_Helper_Layout
      * @access private
      * @var string
      */
-    private $_tagName = 'div';
+    private $tagName = 'div';
 
     /**
      * 是否自闭合
@@ -49,7 +42,7 @@ class Typecho_Widget_Helper_Layout
      * @access private
      * @var boolean
      */
-    private $_close = false;
+    private $close = false;
 
     /**
      * 是否强制自闭合
@@ -57,7 +50,7 @@ class Typecho_Widget_Helper_Layout
      * @access private
      * @var boolean
      */
-    private $_forceClose = NULL;
+    private $forceClose = null;
 
     /**
      * 内部数据
@@ -65,143 +58,99 @@ class Typecho_Widget_Helper_Layout
      * @access private
      * @var string
      */
-    private $_html;
+    private $html;
 
     /**
      * 父节点
      *
      * @access private
-     * @var Typecho_Widget_Helper_Layout
+     * @var Layout
      */
-    private $_parent;
+    private $parent;
 
     /**
      * 构造函数,设置标签名称
      *
-     * @access public
      * @param string $tagName 标签名称
-     * @param array $attributes 属性列表
-     * @return void
+     * @param array|null $attributes 属性列表
+     *
      */
-    public function __construct($tagName = 'div', array $attributes = NULL)
+    public function __construct(string $tagName = 'div', ?array $attributes = null)
     {
         $this->setTagName($tagName);
 
         if (!empty($attributes)) {
             foreach ($attributes as $attributeName => $attributeValue) {
-                $this->setAttribute($attributeName, $attributeValue);
+                $this->setAttribute($attributeName, (string)$attributeValue);
             }
         }
     }
 
     /**
-     * 增加元素
+     * 设置表单属性
      *
-     * @access public
-     * @param Typecho_Widget_Helper_Layout $item 元素
-     * @return Typecho_Widget_Helper_Layout
+     * @param string $attributeName 属性名称
+     * @param mixed $attributeValue 属性值
+     * @return $this
      */
-    public function addItem(Typecho_Widget_Helper_Layout $item)
+    public function setAttribute(string $attributeName, $attributeValue): Layout
     {
-        $item->setParent($this);
-        $this->_items[] = $item;
+        $this->attributes[$attributeName] = (string) $attributeValue;
         return $this;
     }
 
     /**
      * 删除元素
      *
-     * @access public
-     * @param Typecho_Widget_Helper_Layout $item 元素
-     * @return Typecho_Widget_Helper_Layout
+     * @param Layout $item 元素
+     * @return $this
      */
-    public function removeItem(Typecho_Widget_Helper_Layout $item)
+    public function removeItem(Layout $item): Layout
     {
-        unset($this->_items[array_search($item, $this->_items)]);
+        unset($this->items[array_search($item, $this->items)]);
         return $this;
     }
 
     /**
-     * getItems  
-     * 
-     * @access public
+     * getItems
+     *
      * @return array
      */
-    public function getItems()
+    public function getItems(): array
     {
-        return $this->_items;
+        return $this->items;
     }
 
     /**
-     * 设置内部数据
+     * getTagName
      *
-     * @access public
-     * @param mixed $html 内部数据
-     * @return unknown
+     * @return string
      */
-    public function html($html = false)
+    public function getTagName(): string
     {
-        if (false === $html) {
-            if (empty($this->_html)) {
-                foreach ($this->_items as $item) {
-                    $item->render();
-                }
-            } else {
-                echo $this->_html;
-            }
-        } else {
-            $this->_html = $html;
-            return $this;
-        }
+        return $this->tagName;
     }
 
     /**
      * 设置标签名
      *
-     * @access public
      * @param string $tagName 标签名
-     * @return void
      */
-    public function setTagName($tagName)
+    public function setTagName(string $tagName)
     {
-        $this->_tagName = $tagName;
-    }
-    
-    /**
-     * getTagName  
-     * 
-     * @param mixed $tagName 
-     * @access public
-     * @return void
-     */
-    public function getTagName($tagName)
-    {}
-
-    /**
-     * 设置表单属性
-     *
-     * @access public
-     * @param string $attributeName 属性名称
-     * @param string $attributeValue 属性值
-     * @return Typecho_Widget_Helper_Layout
-     */
-    public function setAttribute($attributeName, $attributeValue)
-    {
-        $this->_attributes[$attributeName] = $attributeValue;
-        return $this;
+        $this->tagName = $tagName;
     }
 
     /**
      * 移除某个属性
      *
-     * @access public
      * @param string $attributeName 属性名称
-     * @return Typecho_Widget_Helper_Layout
+     * @return $this
      */
-    public function removeAttribute($attributeName)
+    public function removeAttribute(string $attributeName): Layout
     {
-        if (isset($this->_attributes[$attributeName])) {
-            unset($this->_attributes[$attributeName]);
+        if (isset($this->attributes[$attributeName])) {
+            unset($this->attributes[$attributeName]);
         }
 
         return $this;
@@ -211,142 +160,164 @@ class Typecho_Widget_Helper_Layout
      * 获取属性
      *
      * @access public
+     *
      * @param string $attributeName 属性名
-     * @return string
+     * @return string|null
      */
-    public function getAttribute($attributeName)
+    public function getAttribute(string $attributeName): ?string
     {
-        return isset($this->_attributes[$attributeName]) ? $this->_attributes[$attributeName] : NULL;
+        return $this->attributes[$attributeName] ?? null;
     }
 
     /**
      * 设置是否自闭合
      *
-     * @access public
      * @param boolean $close 是否自闭合
-     * @return Typecho_Widget_Helper_Layout
+     * @return $this
      */
-    public function setClose($close)
+    public function setClose(bool $close): Layout
     {
-        $this->_forceClose = $close;
-        return $this;
-    }
-
-    /**
-     * 设置父节点
-     *
-     * @access public
-     * @param Typecho_Widget_Helper_Layout $parent 父节点
-     * @return Typecho_Widget_Helper_Layout
-     */
-    public function setParent(Typecho_Widget_Helper_Layout $parent)
-    {
-        $this->_parent = $parent;
+        $this->forceClose = $close;
         return $this;
     }
 
     /**
      * 获取父节点
      *
-     * @access public
-     * @return Typecho_Widget_Helper_Layout
+     * @return Layout
      */
-    public function getParent()
+    public function getParent(): Layout
     {
-        return $this->_parent;
+        return $this->parent;
+    }
+
+    /**
+     * 设置父节点
+     *
+     * @param Layout $parent 父节点
+     * @return $this
+     */
+    public function setParent(Layout $parent): Layout
+    {
+        $this->parent = $parent;
+        return $this;
     }
 
     /**
      * 增加到某布局元素集合中
      *
-     * @access public
-     * @param Typecho_Widget_Helper_Layout $parent 布局对象
-     * @return Typecho_Widget_Helper_Layout
+     * @param Layout $parent 布局对象
+     * @return $this
      */
-    public function appendTo(Typecho_Widget_Helper_Layout $parent)
+    public function appendTo(Layout $parent): Layout
     {
         $parent->addItem($this);
         return $this;
     }
 
     /**
-     * 开始标签
+     * 增加元素
      *
-     * @access public
-     * @return void
+     * @param Layout $item 元素
+     * @return $this
+     */
+    public function addItem(Layout $item): Layout
+    {
+        $item->setParent($this);
+        $this->items[] = $item;
+        return $this;
+    }
+
+    /**
+     * 获取属性
+     *
+     * @param string $name 属性名称
+     * @return string|null
+     */
+    public function __get(string $name): ?string
+    {
+        return $this->attributes[$name] ?? null;
+    }
+
+    /**
+     * 设置属性
+     *
+     * @param string $name 属性名称
+     * @param string $value 属性值
+     */
+    public function __set(string $name, string $value)
+    {
+        $this->attributes[$name] = $value;
+    }
+
+    /**
+     * 输出所有元素
+     */
+    public function render()
+    {
+        if (empty($this->items) && empty($this->html)) {
+            $this->close = true;
+        }
+
+        if (null !== $this->forceClose) {
+            $this->close = $this->forceClose;
+        }
+
+        $this->start();
+        $this->html();
+        $this->end();
+    }
+
+    /**
+     * 开始标签
      */
     public function start()
     {
         /** 输出标签 */
-        echo $this->_tagName ? "<{$this->_tagName}" : NULL;
+        echo $this->tagName ? "<{$this->tagName}" : null;
 
         /** 输出属性 */
-        foreach ($this->_attributes as $attributeName => $attributeValue) {
+        foreach ($this->attributes as $attributeName => $attributeValue) {
             echo " {$attributeName}=\"{$attributeValue}\"";
         }
 
         /** 支持自闭合 */
-        if (!$this->_close && $this->_tagName) {
+        if (!$this->close && $this->tagName) {
             echo ">\n";
+        }
+    }
+
+    /**
+     * 设置内部数据
+     *
+     * @param string|null $html 内部数据
+     * @return void|$this
+     */
+    public function html(?string $html = null)
+    {
+        if (null === $html) {
+            if (empty($this->html)) {
+                foreach ($this->items as $item) {
+                    $item->render();
+                }
+            } else {
+                echo $this->html;
+            }
+        } else {
+            $this->html = $html;
+            return $this;
         }
     }
 
     /**
      * 结束标签
      *
-     * @access public
      * @return void
      */
     public function end()
     {
-        if ($this->_tagName) {
-            echo $this->_close ? " />\n" : "</{$this->_tagName}>\n";
+        if ($this->tagName) {
+            echo $this->close ? " />\n" : "</{$this->tagName}>\n";
         }
-    }
-
-    /**
-     * 设置属性
-     *
-     * @access public
-     * @param string $attributeName 属性名称
-     * @param string $attributeValue 属性值
-     * @return void
-     */
-    public function __set($name, $value)
-    {
-        $this->_attributes[$name] = $value;
-    }
-
-    /**
-     * 获取属性
-     *
-     * @access public
-     * @param string $attributeName 属性名称
-     * @return void
-     */
-    public function __get($name)
-    {
-        return isset($this->_attributes[$name]) ? $this->_attributes[$name] : NULL;
-    }
-
-    /**
-     * 输出所有元素
-     *
-     * @access public
-     * @return void
-     */
-    public function render()
-    {
-        if (empty($this->_items) && empty($this->_html)) {
-            $this->_close = true;
-        }
-
-        if (NULL !== $this->_forceClose) {
-            $this->_close = $this->_forceClose;
-        }
-
-        $this->start();
-        $this->html();
-        $this->end();
     }
 }

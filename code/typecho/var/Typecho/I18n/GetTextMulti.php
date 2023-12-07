@@ -1,11 +1,6 @@
 <?php
-/**
- * Typecho Blog Platform
- *
- * @copyright  Copyright (c) 2008 Typecho team (http://www.typecho.org)
- * @license    GNU General Public License 2.0
- * @version    $Id$
- */
+
+namespace Typecho\I18n;
 
 /**
  * 用于解决一个多个mo文件带来的读写问题
@@ -15,15 +10,15 @@
  * @category typecho
  * @package I18n
  */
-class Typecho_I18n_GetTextMulti
+class GetTextMulti
 {
     /**
      * 所有的文件读写句柄
      *
      * @access private
-     * @var array
+     * @var GetText[]
      */
-    private $_handles = array();
+    private $handlers = [];
 
     /**
      * 构造函数
@@ -32,7 +27,7 @@ class Typecho_I18n_GetTextMulti
      * @param string $fileName 语言文件名
      * @return void
      */
-    public function __construct($fileName)
+    public function __construct(string $fileName)
     {
         $this->addFile($fileName);
     }
@@ -44,9 +39,9 @@ class Typecho_I18n_GetTextMulti
      * @param string $fileName 语言文件名
      * @return void
      */
-    public function addFile($fileName)
+    public function addFile(string $fileName)
     {
-        $this->_handles[] = new Typecho_I18n_GetText($fileName, true);
+        $this->handlers[] = new GetText($fileName, true);
     }
 
     /**
@@ -56,11 +51,11 @@ class Typecho_I18n_GetTextMulti
      * @param string string to be translated
      * @return string translated string (or original, if not found)
      */
-    public function translate($string)
+    public function translate(string $string): string
     {
-        foreach ($this->_handles as $handle) {
+        foreach ($this->handlers as $handle) {
             $string = $handle->translate($string, $count);
-            if (-1 != $count) {
+            if (- 1 != $count) {
                 break;
             }
         }
@@ -75,13 +70,15 @@ class Typecho_I18n_GetTextMulti
      * @param string single
      * @param string plural
      * @param string number
-     * @return translated plural form
+     * @return string translated plural form
      */
-    public function ngettext($single, $plural, $number)
+    public function ngettext($single, $plural, $number): string
     {
-        foreach ($this->_handles as $handle) {
-            $string = $handle->ngettext($single, $plural, $number, $count);
-            if (-1 != $count) {
+        $count = - 1;
+
+        foreach ($this->handlers as $handler) {
+            $string = $handler->ngettext($single, $plural, $number, $count);
+            if (- 1 != $count) {
                 break;
             }
         }
@@ -97,9 +94,9 @@ class Typecho_I18n_GetTextMulti
      */
     public function __destruct()
     {
-        foreach ($this->_handles as $handle) {
+        foreach ($this->handlers as $handler) {
             /** 显示的释放内存 */
-            unset($handle);
+            unset($handler);
         }
     }
 }

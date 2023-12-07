@@ -1,5 +1,18 @@
 <?php
-if (!defined('__TYPECHO_ROOT_DIR__')) exit;
+
+namespace Widget;
+
+use Typecho\Common;
+use Typecho\Cookie;
+use Typecho\Db\Exception;
+use Typecho\Validate;
+use Utils\PasswordHash;
+use Widget\Base\Users;
+
+if (!defined('__TYPECHO_ROOT_DIR__')) {
+    exit;
+}
+
 /**
  * 注册组件
  *
@@ -7,13 +20,12 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * @category typecho
  * @package Widget
  */
-class Widget_Register extends Widget_Abstract_Users implements Widget_Interface_Do
+class Register extends Users implements ActionInterface
 {
     /**
      * 初始化函数
      *
-     * @access public
-     * @return void
+     * @throws Exception
      */
     public function action()
     {
@@ -27,16 +39,16 @@ class Widget_Register extends Widget_Abstract_Users implements Widget_Interface_
         }
 
         /** 初始化验证类 */
-        $validator = new Typecho_Validate();
+        $validator = new Validate();
         $validator->addRule('name', 'required', _t('必须填写用户名称'));
         $validator->addRule('name', 'minLength', _t('用户名至少包含2个字符'), 2);
         $validator->addRule('name', 'maxLength', _t('用户名最多包含32个字符'), 32);
         $validator->addRule('name', 'xssCheck', _t('请不要在用户名中使用特殊字符'));
-        $validator->addRule('name', array($this, 'nameExists'), _t('用户名已经存在'));
+        $validator->addRule('name', [$this, 'nameExists'], _t('用户名已经存在'));
         $validator->addRule('mail', 'required', _t('必须填写电子邮箱'));
-        $validator->addRule('mail', array($this, 'mailExists'), _t('电子邮箱地址已经存在'));
+        $validator->addRule('mail', [$this, 'mailExists'], _t('电子邮箱地址已经存在'));
         $validator->addRule('mail', 'email', _t('电子邮箱格式错误'));
-        $validator->addRule('mail', 'maxLength', _t('电子邮箱最多包含200个字符'), 200);
+        $validator->addRule('mail', 'maxLength', _t('电子邮箱最多包含64个字符'), 64);
 
         /** 如果请求中有password */
         if (array_key_exists('password', $_REQUEST)) {
@@ -48,41 +60,48 @@ class Widget_Register extends Widget_Abstract_Users implements Widget_Interface_
 
         /** 截获验证异常 */
         if ($error = $validator->run($this->request->from('name', 'password', 'mail', 'confirm'))) {
-            Typecho_Cookie::set('__typecho_remember_name', $this->request->name);
-            Typecho_Cookie::set('__typecho_remember_mail', $this->request->mail);
+            Cookie::set('__typecho_remember_name', $this->request->name);
+            Cookie::set('__typecho_remember_mail', $this->request->mail);
 
             /** 设置提示信息 */
-            $this->widget('Widget_Notice')->set($error);
+            Notice::alloc()->set($error);
             $this->response->goBack();
         }
 
         $hasher = new PasswordHash(8, true);
-        $generatedPassword = Typecho_Common::randString(7);
+        $generatedPassword = Common::randString(7);
 
-        $dataStruct = array(
-            'name'      =>  $this->request->name,
-            'mail'      =>  $this->request->mail,
-            'screenName'=>  $this->request->name,
-            'password'  =>  $hasher->HashPassword($generatedPassword),
-            'created'   =>  $this->options->time,
-            'group'     =>  'subscriber'
-        );
+        $dataStruct = [
+            'name' => $this->request->name,
+            'mail' => $this->request->mail,
+            'screenName' => $this->request->name,
+            'password' => $hasher->hashPassword($generatedPassword),
+            'created' => $this->options->time,
+            'group' => 'subscriber'
+        ];
 
-        $dataStruct = $this->pluginHandle()->register($dataStruct);
+        $dataStruct = self::pluginHandle()->register($dataStruct);
 
         $insertId = $this->insert($dataStruct);
         $this->db->fetchRow($this->select()->where('uid = ?', $insertId)
-        ->limit(1), array($this, 'push'));
+            ->limit(1), [$this, 'push']);
 
-        $this->pluginHandle()->finishRegister($this);
+        self::pluginHandle()->finishRegister($this);
 
         $this->user->login($this->request->name, $generatedPassword);
 
-        Typecho_Cookie::delete('__typecho_first_run');
-        Typecho_Cookie::delete('__typecho_remember_name');
-        Typecho_Cookie::delete('__typecho_remember_mail');
+        Cookie::delete('__typecho_first_run');
+        Cookie::delete('__typecho_remember_name');
+        Cookie::delete('__typecho_remember_mail');
 
-        $this->widget('Widget_Notice')->set(_t('用户 <strong>%s</strong> 已经成功注册, 密码为 <strong>%s</strong>', $this->screenName, $generatedPassword), 'success');
+        Notice::alloc()->set(
+            _t(
+                '用户 <strong>%s</strong> 已经成功注册, 密码为 <strong>%s</strong>',
+                $this->screenName,
+                $generatedPassword
+            ),
+            'success'
+        );
         $this->response->redirect($this->options->adminUrl);
     }
 }
